@@ -52,8 +52,10 @@ geojson = st.sidebar.file_uploader("Cargar GeoJSON", type=["geojson"])
 if geojson is not None:
     gdf = gpd.read_file(geojson)
     df = gpd.GeoDataFrame(df)
-    df["geometry"] = df.apply(lambda row: gpd.points_from_xy([row.lon], [row.lat])[0], axis=1)
-    df.set_geometry('geometry')
+    df["geometry"] = df.apply(
+        lambda row: gpd.points_from_xy([row.lon], [row.lat])[0], axis=1
+    )
+    df.set_geometry("geometry")
     df = gpd.sjoin(df, gdf, op="within")
     df = df.drop(columns=["geometry", "index_right"])
     df = pd.DataFrame(df)
