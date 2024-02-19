@@ -128,11 +128,12 @@ st.set_page_config(
     page_title="Explorador de datos REPDA Guanajuato",
     page_icon="💧",
     layout="wide",
+    
 )
 
 _, cent_co, _ = st.columns(3)
 with cent_co:
-    st.image("media/logo-poplab.png", width=500, use_column_width=True)
+    st.image("media/poplab.png", width=500, use_column_width=True)
 
 
 st.title("Explorador de datos REPDA Guanajuato")
