@@ -3,188 +3,294 @@ import pandas as pd
 import geopandas as gpd
 from diagnostics import run_df_diagnostics
 import plotly.express as px
+from streamlit_option_menu import option_menu
 
 
-st.set_page_config(
-    page_title="Explorador REPDA",
-    page_icon="🧊",
-    layout="wide",
-)
-
-st.title("Explorador REPDA")
+# Utils
 
 
-def load_data():
-    df = pd.read_json("data.json")
-    df = df.drop_duplicates()
+def exclusive_categorical_search(df, filters: dict[str, list[str]]):
+    filtered_df = df.copy()
+    for column, values in filters.items():
+        if "Todos" in values:
+            continue
+        filtered_df = filtered_df[filtered_df[column].isin(values)]
 
-    return df
+        # [ 1, 2, 3, 4] -> [TRUE, FALSE, TRUE, FALSE] -> [1, 3]
+        # [1, 3] -> [False, TRUE, ] -> [3]
+        # True and True -> True
+        # False and True -> False
+
+    return filtered_df
 
 
-df = load_data()
+def exclusive_numerical_search(df, filters: dict[str, list[float]]):
+    """Performs an exclusive search on a dataframe
+    Args:
+        df (pd.DataFrame): Dataframe to search
+        filters (dict[str, list[float]]): Dictionary of filters with a list of two values min and max
+    """
+    filtered_df = df.copy()
+    for column, values in filters.items():
+        filtered_df = filtered_df[filtered_df[column] >= values[0]]
+        filtered_df = filtered_df[filtered_df[column] <= values[1]]
 
-# run_df_diagnostics(df, "Datos iniciales")
+        # [ 1, 2, 3, 4] -> [TRUE, FALSE, TRUE, FALSE] -> [1, 3]
+        # [1, 3] -> [False, TRUE, ] -> [3]
+        # True and True -> True
+        # False and True -> False
+    return filtered_df
 
 
-# Filters
+def inclusive_categorical_search(df: pd.DataFrame, filters: dict[str, list[str]]):
+    filtered_dfs = []
+    if len(filters) == 0:
+        return df
+    for column, values in filters.items():
+        st.write(column)
+        if "Todos" in values:
+            filtered_dfs.append(df)
+            continue
+        filtered_dfs.append(df[df[column].isin(values)])
+    filtered_df = pd.concat(filtered_dfs)
+    filtered_df = filtered_df.drop_duplicates()
 
-st.sidebar.header("Filtros")
+    # d1 [1, 2, 3, 4] -> [TRUE, FALSE, TRUE, FALSE] -> [1, 3]
+    # d2 [1, 2, 3, 4] -> [FALSE, TRUE, TRUE, FALSE] -> [2, 3]
+    # [1, 3] + [2, 3] -> [1, 3, 2, 3] -> [1, 3, 2, 3]
+    # [1, 3, 2, 3] -> [1, 3, 2]
 
-categorical_columns = {
+    return filtered_df
+
+
+def inclusive_numerical_search(df: pd.DataFrame, filters: dict[str, list[float]]):
+    filtered_dfs = []
+    if len(filters) == 0:
+        return df
+    for column, values in filters.items():
+        column = get_option_value(column)
+        temp_df = df.copy()
+        temp_df = temp_df[temp_df[column] >= values[0]]
+        temp_df = temp_df[temp_df[column] <= values[1]]
+        filtered_dfs.append(temp_df)
+    filtered_df = pd.concat(filtered_dfs)
+    filtered_df = filtered_df.drop_duplicates()
+
+    # d1 [1, 2, 3, 4] -> [TRUE, FALSE, TRUE, FALSE] -> [1, 3]
+    # d2 [1, 2, 3, 4] -> [FALSE, TRUE, TRUE, FALSE] -> [2, 3]
+    # [1, 3] + [2, 3] -> [1, 3, 2, 3] -> [1, 3, 2, 3]
+    # [1, 3, 2, 3] -> [1, 3, 2]
+
+    return filtered_df
+
+
+# CONSTANTS
+CATEGORICAL_COLUMNS = {
     "Titular": "titular",
-    "Título": "titulo",
+    # "Título": "titulo",
     "Uso amparado": "uso_amparado",
-    "Anotaciones marginales": "anotaciones_marginales",
-    "Tipo de anexo": "tipo_de_anexo",
-    "Estado": "estado",
+    # "Anotaciones marginales": "anotaciones_marginales",
+    # "Tipo de anexo": "tipo_de_anexo",
+    # "Estado": "estado",
     "Municipio": "municipio",
-    "Región hidrológica": "region_hidrologica",
-    "Cuenca": "cuenca",
+    # "Región hidrológica": "region_hidrologica",
+    # "Cuenca": "cuenca",
     "Acuífero": "acuifero",
-    "Acuifero homologado": "acuifero_homologado",
+    # "Acuifero homologado": "acuifero_homologado",
 }
 
-st.sidebar.write("Filtrado por region via GeoJSON")
-st.sidebar.write("Instrucciones: Entra a https://geojson.io/ y dibuja un poligono")
-st.sidebar.write("Despues descarga el archivo como GeoJSON y cargalo aqui")
-geojson = st.sidebar.file_uploader("Cargar GeoJSON", type=["geojson"])
-
-if geojson is not None:
-    gdf = gpd.read_file(geojson)
-    df = gpd.GeoDataFrame(df)
-    df["geometry"] = df.apply(
-        lambda row: gpd.points_from_xy([row.lon], [row.lat])[0], axis=1
-    )
-    df.set_geometry("geometry")
-    df = gpd.sjoin(df, gdf, op="within")
-    df = df.drop(columns=["geometry", "index_right"])
-    df = pd.DataFrame(df)
-
-
-columns = st.sidebar.multiselect(
-    "Selecciona columnas para filtrar por valor",
-    categorical_columns.keys(),
-)
-
-if columns:
-    for column in columns:
-        key = categorical_columns[column]
-        column_filters = st.sidebar.multiselect(
-            f"Selecciona valores para: {column}",
-            df[key].unique().tolist(),
-        )
-        if column_filters:
-            df = df[df[key].isin(column_filters)]
-
-numeric_columns = {
-    "Volumen total de aguas nacionales": "volumen_total_de_aguas_nacionales",
-    "Volumen total de aguas superficiales": "volumen_total_de_aguas_superficiales",
-    "Volumen total de aguas subterráneas": "volumen_total_de_aguas_subterraneas",
-    "Volumen total de descargas": "volumen_total_de_descargas",
-    "Número de descargas en el título": "anexos_descargas",
-    "Número de tomas subtarráneas en el título": "anexos_subterraneos",
-    "Número de tomas superficiales en el título": "anexos_superficiales",
-    "Número de tomas en zonas federales en el título": "anexos_zonas_federales",
-    "Volumen individual": "volumen",
-    "Superficie": "superficie",
-    "Volumen de descarga diario": "volumen_de_descarga_diario",
+NUMERIC_COLUMNS = {
+    # "Volumen total de aguas nacionales": "volumen_total_de_aguas_nacionales",
+    # "Volumen total de aguas superficiales": "volumen_total_de_aguas_superficiales",
+    # "Volumen total de aguas subterráneas": "volumen_total_de_aguas_subterraneas",
+    # "Volumen total de descargas": "volumen_total_de_descargas",
+    # "Número de descargas en el título": "anexos_descargas",
+    # "Número de tomas subtarráneas en el título": "anexos_subterraneos",
+    # "Número de tomas superficiales en el título": "anexos_superficiales",
+    # "Número de tomas en zonas federales en el título": "anexos_zonas_federales",
+    "Volumen de extracción": "volumen",
+    # "Superficie": "superficie",
+    # "Volumen de descarga diario": "volumen_de_descarga_diario",
     "Volumen de descarga anual": "volumen_de_descarga_anual",
 }
 
-# Check if there are not None values in columns
-numeric_columns_alive = {}
-other_category_columns = (
-    set(df.columns.tolist())
-    - set(numeric_columns.values())
-    - set(categorical_columns.values())
+
+def get_option_value(key):
+    if key in CATEGORICAL_COLUMNS.keys():
+        return CATEGORICAL_COLUMNS[key]
+    elif key in NUMERIC_COLUMNS.keys():
+        return NUMERIC_COLUMNS[key]
+    else:
+        return None
+
+
+# PAGE CONFIG
+st.set_page_config(
+    page_title="Explorador de datos REPDA Guanajuato",
+    page_icon="💧",
+    layout="wide",
 )
 
-other_catergory_columns_alive = {}
-for key in other_category_columns:
-    if df[key].notnull().any():
-        other_catergory_columns_alive[key.capitalize().replace("_", " ")] = key
+_, cent_co, _ = st.columns(3)
+with cent_co:
+    st.image("media/logo-poplab.png", width=500, use_column_width=True)
 
-if other_catergory_columns_alive.keys() != []:
-    other_category_columns = st.sidebar.multiselect(
-        "Selecciona columnas para filtrar",
-        other_catergory_columns_alive.keys(),
+
+st.title("Explorador de datos REPDA Guanajuato")
+st.subheader("Datos de concesiones de aguas nacionales en Guanajuato")
+st.markdown("""
+<iframe src="https://poplab.mx/dataCenter/pozos/counter"
+  style="width: 100%; height: 1px; border: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0;"
+></iframe>
+
+<div style="text-align: justify;max-width: 800px;">
+
+Este explorador permite filtrar y examinar los datos de concesiones de aguas nacionales en Guanajuato.
+Los datos han sido obtenidos del Registro Público de Derechos de Agua (REPDA) y han sido procesados para su visualización y análisis.
+
+#### Instrucciones
+
+En el menú de la izquierda, se podran realizar filtros categóricos y numéricos para explorar los datos.
+
+Arriba del mapa se podrá seleccionar una columna para colorear el mapa. También se podrán seleccionar las columnas para visualizar al pasar el cursor sobre los puntos del mapa.
+
+**Nota:** Algunos datos no cuentan con coordenadas, por lo que se les asignó latitud y longitud 1.
+
+</div>
+""", unsafe_allow_html=True
+)
+
+st.sidebar.header("Filtros")
+
+# DATA LOADING
+
+
+@st.cache_data
+def load_complete_data():
+    df = pd.read_json("data.json")
+    df = df.drop_duplicates()
+    return df
+
+
+options = ["Explorador de datos filtrados", "Explorador de datos completos del REPDA"]
+
+
+df = load_complete_data()
+# run_df_diagnostics(df, "Datos iniciales")
+
+# color = st.sidebar.selectbox(
+#     "Selecciona una columna para colorear el mapa", list(CATEGORICAL_COLUMNS.keys()), index=0
+# )
+# if not color:
+#     color = "Estado"
+
+filters = {}
+
+categorical_search_type = "Inclusiva"
+st.sidebar.subheader("Categorías")
+active_filters = st.sidebar.multiselect(
+    "Filtros activos",
+    list(CATEGORICAL_COLUMNS.keys()),
+)
+
+for column_name in active_filters:
+    column = get_option_value(column_name)
+    st.sidebar.write(f"Selecciona {column}")
+    options = df[column].unique().tolist()
+    if column == "estado":
+        options = sorted(options)
+    options.insert(0, "Todos")
+
+    values = st.sidebar.multiselect(
+        column,
+        options,
+        default=["Todos"],
     )
-    if other_category_columns:
-        for key in other_category_columns:
-            column_name = other_catergory_columns_alive[key]
-            column_filters = st.sidebar.multiselect(
-                f"Selecciona valores para: {key}",
-                df[column_name].unique().tolist(),
-            )
-            if column_filters:
-                df = df[df[column_name].isin(column_filters)]
+    filters[column] = values
+    st.sidebar.divider()
 
-for key, column_name in numeric_columns.items():
-    if df[column_name].notnull().any():
-        if df[column_name].min() != df[column_name].max():
-            numeric_columns_alive[key] = column_name
+if categorical_search_type == "Inclusiva":
+    if len(filters) > 0:
+        filtered_df = inclusive_categorical_search(df, filters)
+    else:
+        filtered_df = df
+else:
+    filtered_df = exclusive_categorical_search(df, filters)
+
+st.sidebar.subheader("Volúmenes")
+numerical_search_type = "Exclusiva"
+active_filters = st.sidebar.multiselect(
+    "Filtros activos",
+    list(NUMERIC_COLUMNS.keys()),
+)
+
+numerical_filters = {}
+
+for column_name in active_filters:
+    column = get_option_value(column_name)
+    range_type = st.sidebar.radio(f"Selecciona {column}", ["Mayor que", "Menor que", "Entre"])
+    min = filtered_df[column].min()
+    max = filtered_df[column].max()
+    if range_type == "Mayor que":
+        min_value = st.sidebar.slider(f"Valor mínimo para {column}", min_value=min, max_value=max, value=min)
+        max_value = max
+
+    elif range_type == "Menor que":
+        min_value = min
+        max_value = st.sidebar.slider(f"Valor máximo para {column}", min_value=min, max_value=max, value=max)
+    else:
+        min_value = st.sidebar.slider(f"Valor mínimo para {column}", min_value=min, max_value=max, value=min)
+        max_value = st.sidebar.slider(f"Valor máximo para {column}", min_value=min, max_value=max, value=max)
+    numerical_filters[column] = [min_value, max_value]
+    st.sidebar.divider()
+
+if numerical_search_type == "Inclusiva":
+    if len(numerical_filters) > 0:
+        filtered_df = inclusive_numerical_search(filtered_df, numerical_filters)
+    else:
+        filtered_df = filtered_df
+else:
+    filtered_df = exclusive_numerical_search(filtered_df, numerical_filters)
 
 
-if numeric_columns_alive.keys() != []:
-    numeric_column_filters = st.sidebar.multiselect(
-        "Selecciona columnas para filtrar por rango",
-        numeric_columns_alive.keys(),
-    )
-    if numeric_column_filters:
-        for key in numeric_column_filters:
-            column_name = numeric_columns_alive[key]
-            st.sidebar.write(f"Escoge un rango para: {key}")
-            min_value = st.sidebar.slider(
-                f"Valor mínimo para: {key}",
-                df[column_name].min(),
-                df[column_name].max(),
-                df[column_name].min(),
-            )
-            max_value = st.sidebar.slider(
-                f"Valor máximo para: {key}",
-                df[column_name].min(),
-                df[column_name].max(),
-                df[column_name].max(),
-            )
-            # drop rows that are NONE for that column
+color_options = list(CATEGORICAL_COLUMNS.keys()) + list(NUMERIC_COLUMNS.keys())
+hover_options = color_options.copy() + ["lat", "lon"]
+color_options.remove("Titular")
+# color_options.remove("Título")
 
-            df = df[(df[column_name] >= min_value) & (df[column_name] <= max_value)]
+color = st.selectbox("Selecciona una columna para colorear el mapa", color_options, index=2)
 
+hover = st.multiselect(
+    "Selecciona columnas para visualizar al pasar el cursor sobre los puntos del mapa",
+    hover_options,
+    default=["lat", "lon", "Titular"],
+)
 
-# run_df_diagnostics(df, "Datos filtrados")
+# st.plotly_chart(px.colors.qualitative.swatches())
 
+# st.plotly_chart(px.colors.sequential.swatches())
 
-st.header("Mapa")
-
-
-mapbox = px.scatter_mapbox(
-    df,
+fig = px.scatter_mapbox(
+    filtered_df,
     lat="lat",
     lon="lon",
-    color="tipo_de_anexo",
-    hover_name="titular",
-    hover_data=[
-        "titulo",
-        "estado",
-        "municipio",
-        "region_hidrologica",
-        "cuenca",
-        "acuifero",
-    ],
-    color_discrete_sequence=px.colors.qualitative.Vivid,
-    zoom=4,
-    height=900,
+    # color=CATEGORICAL_COLUMNS[color],
+    color=get_option_value(color),
     width=1000,
-    center={"lat": 23.634501, "lon": -102.552784},
+    height=600,
+    hover_name="titulo",
+    hover_data=map(get_option_value, hover),
     mapbox_style="carto-positron",
+    color_continuous_scale=px.colors.sequential.Reds,
+    color_discrete_sequence=px.colors.qualitative.Dark24,
+    center={"lat": 23.634501, "lon": -102.552784},
+    zoom=4,
 )
-mapbox.update_traces(marker={"size": 8})
 
-st.plotly_chart(mapbox)
+fig.update_traces(marker=dict(size=8, opacity=0.4))
 
-
-st.header("Datos")
-
+st.plotly_chart(fig)
+# st.write("Algunos datos no cuentan con coordenadas, por lo que se les asignó latitud y longitud 1")
 st.dataframe(df)
 
 st.download_button(
