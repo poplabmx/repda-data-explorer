@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+
 # import geopandas as gpd
 # from diagnostics import run_df_diagnostics
 import plotly.express as px
@@ -128,7 +129,6 @@ st.set_page_config(
     page_title="Explorador de datos REPDA Guanajuato",
     page_icon="💧",
     layout="wide",
-    
 )
 
 _, cent_co, _ = st.columns(3)
@@ -138,8 +138,9 @@ with cent_co:
 
 st.title("Explorador de datos REPDA Guanajuato")
 st.subheader("Datos de concesiones de aguas nacionales en Guanajuato")
-st.markdown("""
-<iframe src="https://poplab.mx/dataCenter/pozos/counter"
+st.markdown(
+    """
+<iframe src="https://poplab.mx/especiales/Pese-a-insuficiencia-de-agua-Guanajuato-prioriza-expansion-industrial/counter"
   style="width: 100%; height: 1px; border: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0;"
 ></iframe>
 
@@ -157,7 +158,8 @@ Arriba del mapa se podrá seleccionar una columna para colorear el mapa. Tambié
 **Nota:** Algunos datos no cuentan con coordenadas, por lo que se les asignó latitud y longitud 1.
 
 </div>
-""", unsafe_allow_html=True
+""",
+    unsafe_allow_html=True,
 )
 
 st.sidebar.header("Filtros")
