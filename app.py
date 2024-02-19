@@ -1,9 +1,8 @@
 import streamlit as st
 import pandas as pd
-import geopandas as gpd
-from diagnostics import run_df_diagnostics
+# import geopandas as gpd
+# from diagnostics import run_df_diagnostics
 import plotly.express as px
-from streamlit_option_menu import option_menu
 
 
 # Utils
